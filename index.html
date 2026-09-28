@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2C5F6F">
+<title>Controle Financeiro</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root{
+  --bg:#F6F4EF; --surface:#FFFFFF; --ink:#1C232B; --muted:#6E7580;
+  --income:#3E8F6C; --income-bg:#E8F3ED; --expense:#B5482E; --expense-bg:#F6E7E2;
+  --accent:#2C5F6F; --border:#E3DFD5; --shadow:rgba(28,35,43,.06);
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11161C; --surface:#181F27; --ink:#EDEFF2; --muted:#8B93A0;
+    --income:#5CB98B; --income-bg:#16261F; --expense:#E07A5F; --expense-bg:#2A1913;
+    --accent:#6FA9BA; --border:#262E38; --shadow:rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11161C; --surface:#181F27; --ink:#EDEFF2; --muted:#8B93A0;
+  --income:#5CB98B; --income-bg:#16261F; --expense:#E07A5F; --expense-bg:#2A1913;
+  --accent:#6FA9BA; --border:#262E38; --shadow:rgba(0,0,0,.35);
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px);}
+*{box-sizing:border-box;}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+header{position:sticky;top:0;padding-top:env(safe-area-inset-top,0px);background:var(--surface);border-bottom:1px solid var(--border);z-index:10;}
+.monthbar{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;}
+.monthbar button{background:none;border:none;font-size:22px;color:var(--accent);padding:6px 12px;cursor:pointer;}
+.monthbar h1{font-size:17px;font-weight:600;margin:0;text-transform:capitalize;}
+.tabs{display:flex;padding:0 8px 10px;gap:4px;}
+.tabs button{flex:1;background:none;border:none;padding:9px 4px;font-size:12.5px;color:var(--muted);border-radius:8px;cursor:pointer;font-weight:600;}
+.tabs button.active{background:var(--bg);color:var(--ink);}
+main{max-width:560px;margin:0 auto;padding:14px 14px 120px;}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px var(--shadow);}
+.card h2{font-size:14px;margin:0 0 10px;color:var(--muted);font-weight:600;}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);}
+.row:last-child{border-bottom:none;}
+.row .label{font-size:14px;}
+.row .val{font-size:14px;font-weight:600;white-space:nowrap;}
+.income .val{color:var(--income);}
+.expense .val{color:var(--expense);}
+input,select{font:inherit;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 9px;color:var(--ink);width:100%;}
+.field{margin-bottom:8px;}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:3px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;}
+.additem{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;cursor:pointer;}
+.btn.secondary{background:var(--bg);color:var(--ink);border:1px solid var(--border);}
+.iconbtn{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:4px 6px;}
+.listitem{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);gap:8px;}
+.listitem:last-child{border-bottom:none;}
+.listitem .meta{font-size:12px;color:var(--muted);}
+.total{display:flex;justify-content:space-between;font-size:15px;font-weight:700;padding-top:10px;margin-top:4px;border-top:1px dashed var(--border);}
+.summarybar{position:fixed;left:0;right:0;bottom:0;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:var(--surface);border-top:1px solid var(--border);display:flex;justify-content:space-around;}
+.summarybar div{text-align:center;}
+.summarybar .n{font-size:15px;font-weight:700;}
+.summarybar .l{font-size:10.5px;color:var(--muted);}
+.saldo.pos{color:var(--income);} .saldo.neg{color:var(--expense);}
+.bar-row{margin-bottom:9px;}
+.bar-row .top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:4px;}
+.bar-track{background:var(--bg);border-radius:6px;height:9px;overflow:hidden;}
+.bar-fill{height:100%;background:var(--expense);border-radius:6px;}
+.tag{font-size:11px;background:var(--income-bg);color:var(--income);padding:2px 7px;border-radius:20px;font-weight:600;}
+.tag.exp{background:var(--expense-bg);color:var(--expense);}
+.empty{color:var(--muted);font-size:13px;padding:8px 0;}
+h3.sub{font-size:12.5px;color:var(--muted);margin:14px 0 6px;font-weight:600;}
+</style>
+</head>
+<body>
+<header>
+  <div class="monthbar">
+    <button onclick="shiftMonth(-1)">‹</button>
+    <h1 id="monthLabel"></h1>
+    <button onclick="shiftMonth(1)">›</button>
+  </div>
+  <div class="tabs" id="tabs"></div>
+</header>
+<main id="content"></main>
+<div class="summarybar">
+  <div><div class="n" style="color:var(--income)" id="sumIn">R$0</div><div class="l">Entradas</div></div>
+  <div><div class="n" id="sumSaldo">R$0</div><div class="l">Saldo</div></div>
+  <div><div class="n" style="color:var(--expense)" id="sumOut">R$0</div><div class="l">Saídas</div></div>
+</div>
+<script>
+const CATS=['Moradia','Transporte','Saúde','Educação','Lazer','Investimentos','Poupança','Pet','Saúde e Beleza','Outros'];
+const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+let db={};
+let parcelas=[];
+let fixos=[];
+let mercadoOrc=0;
+let tab='entradas';
+let now=new Date();
+let current=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0');
+
+const firebaseConfig={
+  apiKey:"AIzaSyDnnRBCLCIvbuRh7pnC0Mmy52iBjyWmJNI",
+  authDomain:"controle-financeiro-644b7.firebaseapp.com",
+  projectId:"controle-financeiro-644b7",
+  storageBucket:"controle-financeiro-644b7.firebasestorage.app",
+  messagingSenderId:"108750363342",
+  appId:"1:108750363342:web:65e14d4fb7cf13f720ce9f"
+};
+firebase.initializeApp(firebaseConfig);
+const fsdb=firebase.firestore();
+fsdb.enablePersistence({synchronizeTabs:true}).catch(()=>{});
+let fbReady=false;
+
+function save(){
+  if(fbReady){
+    fsdb.collection('months').doc(current).set(monthData(current)).catch(()=>{});
+    fsdb.doc('settings/shared').set({parcelas,fixos,mercadoOrc}).catch(()=>{});
+  }
+  render();
+}
+function startFirebaseSync(){
+  fsdb.collection('months').onSnapshot(qs=>{
+    const nd={};
+    qs.forEach(doc=>{ nd[doc.id]=doc.data(); });
+    db=nd;
+    render();
+  }, ()=>{});
+  fsdb.doc('settings/shared').onSnapshot(doc=>{
+    const d=doc.data()||{};
+    parcelas=d.parcelas||[]; fixos=d.fixos||[]; mercadoOrc=d.mercadoOrc||0;
+    render();
+  }, ()=>{});
+}
+firebase.auth().signInAnonymously().catch(()=>{});
+firebase.auth().onAuthStateChanged(user=>{
+  if(user&&!fbReady){ fbReady=true; startFirebaseSync(); }
+});
+
+function monthData(key){
+  if(!db[key]){
+    const prevKey=addMonths(key,-1);
+    const prev=db[prevKey];
+    db[key]=prev?{
+      salMe:JSON.parse(JSON.stringify(prev.salMe)),
+      salSp:JSON.parse(JSON.stringify(prev.salSp)),
+      outrasEntradas:[],
+      outrasDespesas:JSON.parse(JSON.stringify(prev.outrasDespesas)),
+      despesas:[],mercado:[]
+    }:{salMe:{bruto:0,dep:0,calcular:true},salSp:{bruto:0,dep:0,calcular:true},outrasEntradas:[],despesas:[],outrasDespesas:[],mercado:[]};
+  }
+  if(!db[key].mercado) db[key].mercado=[];
+  syncInherited(key);
+  return db[key];
+}
+function syncInherited(key){
+  const prevKey=addMonths(key,-1);
+  const prev=db[prevKey];
+  if(!prev) return;
+  const already=new Set(db[key].outrasEntradas.filter(i=>i.fromId).map(i=>i.fromId));
+  (prev.outrasEntradas||[]).filter(i=>i.copiarProximo&&!already.has(i.id)).forEach(i=>{
+    db[key].outrasEntradas.push({id:uid(),desc:i.desc,valor:i.valor,fromId:i.id});
+  });
+}
+function fmt(n){return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function shiftMonth(d){
+  const [y,m]=current.split('-').map(Number);
+  const dt=new Date(y,m-1+d,1);
+  current=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+  render();
+}
+function calcINSS(bruto){
+  const fx=[[1621,.075],[2902.84,.09],[4354.27,.12],[8475.55,.14]];
+  let total=0,prev=0;
+  for(const [lim,rate] of fx){ if(bruto<=prev) break; total+=(Math.min(bruto,lim)-prev)*rate; prev=lim; }
+  return total;
+}
+function calcIRRF(bruto,inss,dep){
+  const base=Math.max(0,bruto-inss-dep*189.59);
+  let imp=0;
+  if(base<=2428.80) imp=0;
+  else if(base<=2826.65) imp=base*.075-182.16;
+  else if(base<=3751.05) imp=base*.15-394.16;
+  else if(base<=4664.68) imp=base*.225-675.49;
+  else imp=base*.275-908.73;
+  imp=Math.max(0,imp);
+  let red=0;
+  if(bruto<=5000) red=imp;
+  else if(bruto<=7350) red=Math.max(0,978.62-0.133145*bruto);
+  return Math.max(0,imp-red);
+}
+function calcFGTS(bruto){return bruto*.08;}
+function salaryCalc(s){
+  if(s.calcular===false){
+    return {inss:0,irrf:0,fgts:0,liquido:s.bruto||0};
+  }
+  const inss=calcINSS(s.bruto||0), irrf=calcIRRF(s.bruto||0,inss,s.dep||0), fgts=calcFGTS(s.bruto||0);
+  const liquido=(s.bruto||0)-inss-irrf;
+  return {inss,irrf,fgts,liquido};
+}
+function monthsDiff(a,b){
+  const [ay,am]=a.split('-').map(Number),[by,bm]=b.split('-').map(Number);
+  return (by-ay)*12+(bm-am);
+}
+function addMonths(key,n){
+  const [y,m]=key.split('-').map(Number);
+  const dt=new Date(y,m-1+n,1);
+  return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0');
+}
+function activeParcelas(monthKey){
+  return parcelas.map(p=>{
+    const idx=monthsDiff(p.mesInicio,monthKey);
+    if(idx<0||idx>=p.total) return null;
+    return {...p,atual:idx+1,mesFim:addMonths(p.mesInicio,p.total-1)};
+  }).filter(Boolean);
+}
+function adiantamentosDoMes(monthKey){
+  return parcelas.filter(p=>p.mesAdiantamento&&p.adiantamento>0&&p.mesAdiantamento===monthKey);
+}
+function antecipacoesDoMes(monthKey){
+  const out=[];
+  parcelas.forEach(p=>(p.antecipacoes||[]).forEach(a=>{ if(a.mes===monthKey) out.push({desc:p.desc,qtd:a.qtd,valor:a.valor}); }));
+  return out;
+}
+function totalEntradas(key){
+  const d=monthData(key);
+  const me=salaryCalc(d.salMe).liquido, sp=salaryCalc(d.salSp).liquido;
+  const outras=d.outrasEntradas.reduce((s,i)=>s+i.valor,0);
+  return me+sp+outras;
+}
+function migrateFixos(){
+  fixos.forEach(f=>{ if(!f.valores){ f.valores=[{mes:f.mesInicio,valor:f.valor}]; delete f.valor; delete f.mesInicio; } });
+}
+migrateFixos();
+function activeFixos(monthKey){
+  const out=[];
+  fixos.forEach(f=>{
+    const apl=f.valores.filter(v=>v.mes<=monthKey).sort((a,b)=>a.mes<b.mes?-1:1).pop();
+    if(!apl||apl.valor===null) return;
+    out.push({...f,valor:apl.valor,mesInicio:f.valores[0].mes,mesValor:apl.mes});
+  });
+  return out;
+}
+function upsertFixoValor(f,mes,valor){
+  const e=f.valores.find(v=>v.mes===mes);
+  if(e) e.valor=valor; else f.valores.push({mes,valor});
+  f.valores.sort((a,b)=>a.mes<b.mes?-1:1);
+}
+function mercadoGasto(monthKey){
+  return monthData(monthKey).mercado.reduce((s,i)=>s+i.valor,0);
+}
+function totalSaidas(key){
+  const d=monthData(key);
+  const desp=d.despesas.reduce((s,i)=>s+i.valor,0);
+  const outras=d.outrasDespesas.reduce((s,i)=>s+i.valor,0);
+  const parc=activeParcelas(key).reduce((s,p)=>s+p.valorParcela,0);
+  const adiant=adiantamentosDoMes(key).reduce((s,p)=>s+p.adiantamento,0);
+  const antec=antecipacoesDoMes(key).reduce((s,a)=>s+a.valor,0);
+  const fx=activeFixos(key).reduce((s,f)=>s+f.valor,0);
+  const merc=mercadoGasto(key);
+  return desp+outras+parc+adiant+antec+fx+merc;
+}
+function uid(){return Math.random().toString(36).slice(2,9);}
+
+function render(){
+  document.getElementById('monthLabel').textContent=MESES[+current.split('-')[1]-1]+' de '+current.split('-')[0];
+  const tabsEl=document.getElementById('tabs');
+  tabsEl.innerHTML='';
+  [['entradas','Entradas'],['saidas','Saídas'],['mercado','Mercado'],['parcelas','Parcelas'],['resumo','Resumo']].forEach(([k,l])=>{
+    const b=document.createElement('button');
+    b.textContent=l; b.className=k===tab?'active':''; b.onclick=()=>{tab=k;render();};
+    tabsEl.appendChild(b);
+  });
+  const c=document.getElementById('content');
+  const active=document.activeElement;
+  const editingField=active&&c.contains(active)&&(active.tagName==='INPUT'||active.tagName==='SELECT');
+  if(!editingField){
+    c.innerHTML = tab==='entradas'?renderEntradas():tab==='saidas'?renderSaidas():tab==='mercado'?renderMercado():tab==='parcelas'?renderParcelas():renderResumo();
+  }
+  const inv=totalEntradas(current), outv=totalSaidas(current), saldo=inv-outv;
+  document.getElementById('sumIn').textContent=fmt(inv);
+  document.getElementById('sumOut').textContent=fmt(outv);
+  const se=document.getElementById('sumSaldo');
+  se.textContent=fmt(saldo); se.className='n saldo '+(saldo>=0?'pos':'neg');
+}
+
+let editing={list:null,id:null};
+function startEdit(list,id){editing={list,id};render();}
+function cancelEdit(){editing={list:null,id:null};render();}
+function getListArr(list){ return list==='fixos'?fixos:monthData(current)[list]; }
+function saveRow(list,id){
+  const arr=getListArr(list);
+  const it=arr.find(x=>x.id===id);
+  const desc=document.getElementById('ed_desc').value.trim();
+  const valor=parseFloat(document.getElementById('ed_valor').value);
+  if(!desc||!valor) return;
+  it.desc=desc;
+  if(list==='fixos') upsertFixoValor(it,current,valor); else it.valor=valor;
+  const catEl=document.getElementById('ed_cat');
+  if(catEl) it.categoria=catEl.value;
+  editing={list:null,id:null};
+  save(); render();
+}
+function rowHTML(list,item,opts){
+  opts=opts||{};
+  if(editing.list===list&&editing.id===item.id){
+    const catOpts=opts.hasCategoria?CATS.map(c=>`<option ${c===item.categoria?'selected':''}>${c}</option>`).join(''):'';
+    return `<div class="listitem" style="flex-direction:column;align-items:stretch;gap:6px">
+      <input id="ed_desc" value="${item.desc}" placeholder="Descrição">
+      <div class="grid3">
+        <input id="ed_valor" type="number" step="0.01" value="${item.valor}">
+        ${opts.hasCategoria?`<select id="ed_cat">${catOpts}</select>`:'<span></span>'}
+        <button class="btn" onclick="saveRow('${list}','${item.id}')">Salvar</button>
+      </div>
+      <button class="btn secondary" onclick="cancelEdit()">Cancelar</button>
+    </div>`;
+  }
+  return `<div class="listitem"><span>${item.desc}${opts.meta?`<br><span class="meta">${opts.meta}</span>`:''}</span><span style="display:flex;align-items:center;gap:8px"><b>${fmt(item.valor)}</b><button class="iconbtn" onclick="startEdit('${list}','${item.id}')">✎</button><button class="iconbtn" onclick="${opts.removeCall}">✕</button></span></div>`;
+}
+function renderEntradas(){
+  const d=monthData(current);
+  const me=salaryCalc(d.salMe), sp=salaryCalc(d.salSp);
+  const outrasHtml=d.outrasEntradas.map(i=>`<div class="listitem"><span>${i.desc}${i.fromId?'<br><span class="meta">↩ copiado do mês anterior</span>':''}</span><span style="display:flex;align-items:center;gap:8px">
+    <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)"><input type="checkbox" style="width:auto" ${i.copiarProximo?'checked':''} onchange="toggleCopiarProximo('${i.id}',this.checked)">copiar p/ próx. mês</label>
+    <b>${fmt(i.valor)}</b><button class="iconbtn" onclick="removeItem('outrasEntradas','${i.id}')">✕</button></span></div>`).join('')||'<div class="empty">Nenhum lançamento.</div>';
+  const outrasDespHtml=d.outrasDespesas.map(i=>rowHTML('outrasDespesas',i,{removeCall:`removeItem('outrasDespesas','${i.id}')`})).join('')||'<div class="empty">Nenhum lançamento.</div>';
+  return `
+  <div class="card">
+    <h2>Meu salário</h2>
+    ${salaryForm('salMe',d.salMe)}
+    ${salaryBreak(me,d.salMe)}
+  </div>
+  <div class="card">
+    <h2>Salário da esposa</h2>
+    ${salaryForm('salSp',d.salSp)}
+    ${salaryBreak(sp,d.salSp)}
+  </div>
+  <div class="card">
+    <h2>Outras entradas</h2>
+    ${outrasHtml}
+    <div class="additem">
+      <input id="oe_desc" placeholder="Descrição">
+      <div class="grid3">
+        <input id="oe_valor" type="number" placeholder="Valor" step="0.01">
+        <span></span>
+        <button class="btn" onclick="addOutraEntrada()">Adicionar</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:2px 0 0;">
+        <input type="checkbox" id="oe_repete" style="width:auto">
+        Copiar este lançamento pro mês seguinte
+      </label>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Outras despesas (plano médico, odonto, descontos de folha...)</h2>
+    ${outrasDespHtml}
+    <div class="additem">
+      <input id="od_desc" placeholder="Descrição">
+      <div class="grid3">
+        <input id="od_valor" type="number" placeholder="Valor" step="0.01">
+        <span></span>
+        <button class="btn" onclick="addOutraDespesa()">Adicionar</button>
+      </div>
+    </div>
+  </div>`;
+}
+function salaryForm(key,s){
+  const on=s.calcular!==false;
+  return `<div class="grid2">
+    <div class="field"><label>Salário bruto</label><input type="number" step="0.01" value="${s.bruto||''}" onchange="updateSalary('${key}','bruto',this.value)"></div>
+    <div class="field"><label>Dependentes (IR)</label><input type="number" value="${s.dep||0}" onchange="updateSalary('${key}','dep',this.value)" ${on?'':'disabled'}></div>
+  </div>
+  <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:4px 0 2px;">
+    <input type="checkbox" style="width:auto" ${on?'checked':''} onchange="toggleCalc('${key}',this.checked)">
+    Calcular INSS/IRRF automaticamente
+  </label>`;
+}
+function toggleCalc(key,checked){
+  monthData(current)[key].calcular=checked; save(); render();
+}
+function salaryBreak(r,s){
+  if(s.calcular===false){
+    return `<div class="total income"><span>Líquido (sem descontos)</span><span>${fmt(r.liquido)}</span></div>`;
+  }
+  return `<div class="row"><span class="label">INSS</span><span class="val">-${fmt(r.inss)}</span></div>
+  <div class="row"><span class="label">IRRF</span><span class="val">-${fmt(r.irrf)}</span></div>
+  <div class="row"><span class="label">FGTS (depositado pelo empregador, informativo)</span><span class="val">${fmt(r.fgts)}</span></div>
+  <div class="total income"><span>Líquido</span><span>${fmt(r.liquido)}</span></div>`;
+}
+function updateSalary(key,field,val){
+  monthData(current)[key][field]=parseFloat(val)||0; save(); render();
+}
+function addOutraEntrada(){
+  const desc=document.getElementById('oe_desc').value.trim();
+  const valor=parseFloat(document.getElementById('oe_valor').value);
+  const copiarProximo=document.getElementById('oe_repete').checked;
+  if(!desc||!valor) return;
+  monthData(current).outrasEntradas.push({id:uid(),desc,valor,copiarProximo});
+  save(); render();
+}
+function toggleCopiarProximo(id,checked){
+  const it=monthData(current).outrasEntradas.find(x=>x.id===id);
+  it.copiarProximo=checked; save(); render();
+}
+
+function renderSaidas(){
+  const d=monthData(current);
+  const despHtml=d.despesas.map(i=>rowHTML('despesas',i,{hasCategoria:true,meta:i.categoria,removeCall:`removeItem('despesas','${i.id}')`})).join('')||'<div class="empty">Nenhuma despesa.</div>';
+  const parc=activeParcelas(current);
+  const adiant=adiantamentosDoMes(current);
+  const antec=antecipacoesDoMes(current);
+  const parcHtml=(parc.map(p=>`<div class="listitem"><span>${p.desc}<br><span class="meta">Parcela ${p.atual}/${p.total}</span></span><b>${fmt(p.valorParcela)}</b></div>`).join('')
+    +adiant.map(p=>`<div class="listitem"><span>${p.desc}<br><span class="meta">Entrada/adiantamento</span></span><b>${fmt(p.adiantamento)}</b></div>`).join('')
+    +antec.map(a=>`<div class="listitem"><span>${a.desc}<br><span class="meta">Antecipação de ${a.qtd}x parcelas</span></span><b>${fmt(a.valor)}</b></div>`).join(''))
+    ||'<div class="empty">Nenhuma parcela ativa neste mês.</div>';
+  const catOpts=CATS.map(c=>`<option>${c}</option>`).join('');
+  const fxList=activeFixos(current);
+  const fxHtml=fxList.map(f=>rowHTML('fixos',f,{hasCategoria:true,meta:f.categoria+' · fixo desde '+f.mesInicio+(f.mesValor!==f.mesInicio?' · valor desde '+f.mesValor:''),removeCall:`removeFixo('${f.id}')`})).join('')||'<div class="empty">Nenhum gasto fixo cadastrado.</div>';
+  const mGasto=mercadoGasto(current), mRestante=mercadoOrc-mGasto;
+  return `
+  <div class="card">
+    <h2>Gastos fixos (recorrentes, sem prazo)</h2>
+    <div class="listitem"><span>Mercado<br><span class="meta">Orçamento ${fmt(mercadoOrc)} · gasto na aba Mercado</span></span><b style="color:${mRestante>=0?'var(--income)':'var(--expense)'}">${fmt(mRestante)} restante</b></div>
+    ${fxHtml}
+    <h3 class="sub">Novo gasto fixo</h3>
+    <div class="additem">
+      <input id="f_desc" placeholder="Descrição (ex: Aluguel, Internet)">
+      <div class="grid3">
+        <input id="f_valor" type="number" placeholder="Valor" step="0.01">
+        <select id="f_cat">${catOpts}</select>
+        <button class="btn" onclick="addFixo()">+</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Despesas categorizadas</h2>
+    ${despHtml}
+    <div class="additem">
+      <input id="d_desc" placeholder="Descrição">
+      <div class="grid3">
+        <input id="d_valor" type="number" placeholder="Valor" step="0.01">
+        <select id="d_cat">${catOpts}</select>
+        <button class="btn" onclick="addDespesa()">+</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Parcelas ativas neste mês</h2>
+    ${parcHtml}
+  </div>`;
+}
+function addDespesa(){
+  const desc=document.getElementById('d_desc').value.trim();
+  const valor=parseFloat(document.getElementById('d_valor').value);
+  const categoria=document.getElementById('d_cat').value;
+  if(!desc||!valor) return;
+  monthData(current).despesas.push({id:uid(),desc,valor,categoria});
+  save(); render();
+}
+function addOutraDespesa(){
+  const desc=document.getElementById('od_desc').value.trim();
+  const valor=parseFloat(document.getElementById('od_valor').value);
+  if(!desc||!valor) return;
+  monthData(current).outrasDespesas.push({id:uid(),desc,valor});
+  save(); render();
+}
+function removeItem(list,id){
+  const d=monthData(current);
+  d[list]=d[list].filter(i=>i.id!==id);
+  save(); render();
+}
+function addFixo(){
+  const desc=document.getElementById('f_desc').value.trim();
+  const valor=parseFloat(document.getElementById('f_valor').value);
+  const categoria=document.getElementById('f_cat').value;
+  if(!desc||!valor) return;
+  fixos.push({id:uid(),desc,categoria,valores:[{mes:current,valor}]});
+  save(); render();
+}
+function removeFixo(id){
+  const f=fixos.find(x=>x.id===id);
+  if(!f) return;
+  if(f.valores[0].mes>=current) fixos=fixos.filter(x=>x.id!==id);
+  else upsertFixoValor(f,current,null);
+  save(); render();
+}
+
+function renderMercado(){
+  const d=monthData(current);
+  const gasto=mercadoGasto(current), restante=mercadoOrc-gasto;
+  const rows=d.mercado.map(i=>rowHTML('mercado',i,{removeCall:`removeItem('mercado','${i.id}')`})).join('')||'<div class="empty">Nenhuma compra lançada neste mês.</div>';
+  return `
+  <div class="card">
+    <h2>Orçamento de Mercado</h2>
+    <div class="field"><label>Orçamento mensal (usado como referência no gasto fixo "Mercado")</label><input type="number" step="0.01" value="${mercadoOrc||''}" onchange="updateMercadoOrc(this.value)"></div>
+    <div class="row"><span class="label">Gasto no mês</span><span class="val">${fmt(gasto)}</span></div>
+    <div class="total"><span>Restante</span><span style="color:${restante>=0?'var(--income)':'var(--expense)'}">${fmt(restante)}</span></div>
+  </div>
+  <div class="card">
+    <h2>Compras do mês</h2>
+    ${rows}
+    <div class="additem">
+      <input id="m_desc" placeholder="Descrição (ex: Supermercado dia 05)">
+      <div class="grid3">
+        <input id="m_valor" type="number" placeholder="Valor" step="0.01">
+        <span></span>
+        <button class="btn" onclick="addMercado()">Adicionar</button>
+      </div>
+    </div>
+  </div>`;
+}
+function updateMercadoOrc(val){ mercadoOrc=parseFloat(val)||0; save(); render(); }
+function addMercado(){
+  const desc=document.getElementById('m_desc').value.trim();
+  const valor=parseFloat(document.getElementById('m_valor').value);
+  if(!desc||!valor) return;
+  monthData(current).mercado.push({id:uid(),desc,valor});
+  save(); render();
+}
+
+let editingParcelaId=null;
+let mostrarFinalizadas=false;
+function renderParcelas(){
+  const rows=parcelas.map(p=>{
+    const idx=monthsDiff(p.mesInicio,current);
+    const ativo=idx>=0&&idx<p.total;
+    const finalizada=idx>=p.total;
+    if(finalizada&&!mostrarFinalizadas) return null;
+    const mesFim=addMonths(p.mesInicio,p.total-1);
+    const adiantInfo=p.adiantamento>0?` · Entrada ${fmt(p.adiantamento)} em ${p.mesAdiantamento}`:'';
+    const restante=p.total-idx-1;
+    const antecForm=(ativo&&restante>0)?`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+      <input id="ant_${p.id}" type="number" min="1" max="${restante}" placeholder="Qtd. parcelas" style="max-width:110px">
+      <button class="btn secondary" onclick="antecipar('${p.id}')">Adiantar parcelas</button>
+    </div>`:'';
+    const antecHist=(p.antecipacoes||[]).map((a,i)=>`<div class="meta" style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
+      <span>↩ Antecipou ${a.qtd}x (${fmt(a.valor)}) em ${a.mes}</span>
+      <button class="iconbtn" style="padding:0 4px" onclick="removerAntecipacao('${p.id}',${i})">✕</button>
+    </div>`).join('');
+    return `<div class="listitem" style="flex-wrap:wrap">
+      <span>${p.desc}<br><span class="meta">Início ${p.mesInicio} · Fim ${mesFim} · ${p.total}x de ${fmt(p.valorParcela)}${adiantInfo}</span>${antecHist}${antecForm}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span class="tag ${ativo?'':'exp'}">${ativo?'Parcela '+(idx+1)+'/'+p.total:(idx<0?'Ainda não iniciou':'Finalizada')}</span>
+        <button class="iconbtn" onclick="editParcela('${p.id}')">✎</button>
+        <button class="iconbtn" onclick="removeParcela('${p.id}')">✕</button>
+      </span></div>`;
+  }).filter(Boolean).join('')||'<div class="empty">Nenhuma compra parcelada ativa neste mês.</div>';
+  const temFinalizadas=parcelas.some(p=>monthsDiff(p.mesInicio,current)>=p.total);
+  const toggleFinalizadas=temFinalizadas?`<button class="btn secondary" style="margin-bottom:10px" onclick="mostrarFinalizadas=!mostrarFinalizadas;render();">${mostrarFinalizadas?'Ocultar':'Mostrar'} finalizadas</button>`:'';
+  const ed=editingParcelaId?parcelas.find(p=>p.id===editingParcelaId):null;
+  return `
+  <div class="card">
+    <h2>Compras parceladas</h2>
+    ${toggleFinalizadas}
+    ${rows}
+    <h3 class="sub">${ed?'Editando: '+ed.desc:'Nova compra parcelada'}</h3>
+    <div class="additem">
+      <input id="p_desc" placeholder="Descrição (ex: Celular)" value="${ed?ed.desc:''}">
+      <div class="grid2">
+        <div class="field"><label>Valor da parcela</label><input id="p_valor" type="number" step="0.01" value="${ed?ed.valorParcela:''}"></div>
+        <div class="field"><label>Nº de parcelas</label><input id="p_total" type="number" value="${ed?ed.total:''}"></div>
+      </div>
+      <div class="field"><label>Mês da 1ª parcela</label><input id="p_inicio" type="month" value="${ed?ed.mesInicio:current}"></div>
+      <h3 class="sub">Entrada / adiantamento (opcional)</h3>
+      <div class="grid2">
+        <div class="field"><label>Valor da entrada</label><input id="p_adiant" type="number" step="0.01" value="${ed&&ed.adiantamento?ed.adiantamento:''}"></div>
+        <div class="field"><label>Mês da entrada</label><input id="p_adiant_mes" type="month" value="${ed&&ed.mesAdiantamento?ed.mesAdiantamento:(ed?ed.mesInicio:current)}"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="addParcela()">${ed?'Salvar alterações':'Adicionar parcelamento'}</button>
+        ${ed?'<button class="btn secondary" onclick="cancelEditParcela()">Cancelar</button>':''}
+      </div>
+    </div>
+  </div>`;
+}
+function antecipar(id){
+  const p=parcelas.find(x=>x.id===id);
+  if(!p) return;
+  const idx=monthsDiff(p.mesInicio,current);
+  const restante=p.total-idx-1;
+  let qtd=parseInt(document.getElementById('ant_'+id).value);
+  if(!qtd||qtd<1) return;
+  qtd=Math.min(qtd,restante);
+  p.antecipacoes=p.antecipacoes||[];
+  p.antecipacoes.push({mes:current,qtd,valor:qtd*p.valorParcela});
+  p.total-=qtd;
+  save(); render();
+}
+function removerAntecipacao(id,i){
+  const p=parcelas.find(x=>x.id===id);
+  if(!p||!p.antecipacoes||!p.antecipacoes[i]) return;
+  p.total+=p.antecipacoes[i].qtd;
+  p.antecipacoes.splice(i,1);
+  save(); render();
+}
+function editParcela(id){ editingParcelaId=id; render(); }
+function cancelEditParcela(){ editingParcelaId=null; render(); }
+function addParcela(){
+  const desc=document.getElementById('p_desc').value.trim();
+  const valorParcela=parseFloat(document.getElementById('p_valor').value);
+  const total=parseInt(document.getElementById('p_total').value);
+  const mesInicio=document.getElementById('p_inicio').value;
+  const adiantamento=parseFloat(document.getElementById('p_adiant').value)||0;
+  const mesAdiantamento=document.getElementById('p_adiant_mes').value||mesInicio;
+  if(!desc||!valorParcela||!total||!mesInicio) return;
+  if(editingParcelaId){
+    const p=parcelas.find(x=>x.id===editingParcelaId);
+    Object.assign(p,{desc,valorParcela,total,mesInicio,adiantamento,mesAdiantamento});
+    editingParcelaId=null;
+  }else{
+    parcelas.push({id:uid(),desc,valorParcela,total,mesInicio,adiantamento,mesAdiantamento});
+  }
+  save(); render();
+}
+function removeParcela(id){ parcelas=parcelas.filter(p=>p.id!==id); if(editingParcelaId===id) editingParcelaId=null; save(); render(); }
+
+function moveToMonth(targetMonth){
+  if(!targetMonth||targetMonth===current) return;
+  if(!confirm('Mover todos os dados de '+current+' para '+targetMonth+'? Os dados de '+current+' serão apagados e os de '+targetMonth+' (se houver) serão substituídos.')) return;
+  db[targetMonth]=JSON.parse(JSON.stringify(monthData(current)));
+  delete db[current];
+  current=targetMonth;
+  save(); render();
+}
+function renderResumo(){
+  const d=monthData(current);
+  const byCat={};
+  d.despesas.forEach(i=>{byCat[i.categoria]=(byCat[i.categoria]||0)+i.valor;});
+  const outrasTotal=d.outrasDespesas.reduce((s,i)=>s+i.valor,0);
+  if(outrasTotal) byCat['Outras despesas']=outrasTotal;
+  activeParcelas(current).forEach(p=>{byCat['Parcelas']=(byCat['Parcelas']||0)+p.valorParcela;});
+  adiantamentosDoMes(current).forEach(p=>{byCat['Parcelas']=(byCat['Parcelas']||0)+p.adiantamento;});
+  antecipacoesDoMes(current).forEach(a=>{byCat['Parcelas']=(byCat['Parcelas']||0)+a.valor;});
+  activeFixos(current).forEach(f=>{byCat[f.categoria]=(byCat[f.categoria]||0)+f.valor;});
+  const mGastoResumo=mercadoGasto(current);
+  if(mGastoResumo) byCat['Mercado']=(byCat['Mercado']||0)+mGastoResumo;
+  const max=Math.max(1,...Object.values(byCat));
+  const bars=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([cat,v])=>`
+    <div class="bar-row"><div class="top"><span>${cat}</span><b>${fmt(v)}</b></div><div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(0)}%"></div></div></div>`).join('')||'<div class="empty">Sem despesas lançadas neste mês.</div>';
+  const inv=totalEntradas(current), outv=totalSaidas(current);
+  return `
+  <div class="card">
+    <h2>Gastos por categoria</h2>
+    ${bars}
+  </div>
+  <div class="card">
+    <h2>Totais do mês</h2>
+    <div class="row income"><span class="label">Total entradas</span><span class="val">${fmt(inv)}</span></div>
+    <div class="row expense"><span class="label">Total saídas</span><span class="val">${fmt(outv)}</span></div>
+    <div class="total"><span>Saldo</span><span style="color:${inv-outv>=0?'var(--income)':'var(--expense)'}">${fmt(inv-outv)}</span></div>
+  </div>
+  <div class="card">
+    <h2>Mover dados deste mês</h2>
+    <div class="field"><label>Mover tudo de ${current} para:</label><input id="mv_month" type="month" value="${addMonths(current,1)}"></div>
+    <button class="btn secondary" onclick="moveToMonth(document.getElementById('mv_month').value)">Mover dados</button>
+  </div>`;
+}
+render();
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+</script>
+</body>
+</html>
