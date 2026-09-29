@@ -13,6 +13,7 @@
 :root{
   --bg:#F6F4EF; --surface:#FFFFFF; --ink:#1C232B; --muted:#6E7580;
   --income:#3E8F6C; --income-bg:#E8F3ED; --expense:#B5482E; --expense-bg:#F6E7E2;
+  --unpaid:#B5541A; --unpaid-bg:#FBEBDB;
   --accent:#2C5F6F; --border:#E3DFD5; --shadow:rgba(28,35,43,.06);
   box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
 }
@@ -20,12 +21,14 @@
   :root:not([data-theme="light"]){
     --bg:#11161C; --surface:#181F27; --ink:#EDEFF2; --muted:#8B93A0;
     --income:#5CB98B; --income-bg:#16261F; --expense:#E07A5F; --expense-bg:#2A1913;
+    --unpaid:#E0954D; --unpaid-bg:#2E2013;
     --accent:#6FA9BA; --border:#262E38; --shadow:rgba(0,0,0,.35);
   }
 }
 :root[data-theme="dark"]{
   --bg:#11161C; --surface:#181F27; --ink:#EDEFF2; --muted:#8B93A0;
   --income:#5CB98B; --income-bg:#16261F; --expense:#E07A5F; --expense-bg:#2A1913;
+  --unpaid:#E0954D; --unpaid-bg:#2E2013;
   --accent:#6FA9BA; --border:#262E38; --shadow:rgba(0,0,0,.35);
 }
 html{scroll-padding-top:env(safe-area-inset-top,0px);}
@@ -72,6 +75,9 @@ input,select{font:inherit;background:var(--bg);border:1px solid var(--border);bo
 .tag{font-size:11px;background:var(--income-bg);color:var(--income);padding:2px 7px;border-radius:20px;font-weight:600;}
 .tag.exp{background:var(--expense-bg);color:var(--expense);}
 .empty{color:var(--muted);font-size:13px;padding:8px 0;}
+.fixo-pago{background:var(--income-bg);border-radius:8px;padding:8px;margin-bottom:2px;}
+.fixo-naopago{background:var(--unpaid-bg);border-radius:8px;padding:8px;margin-bottom:2px;}
+.fixo-pago,.fixo-naopago{border-bottom:none!important;}
 h3.sub{font-size:12.5px;color:var(--muted);margin:14px 0 6px;font-weight:600;}
 </style>
 </head>
@@ -91,11 +97,12 @@ h3.sub{font-size:12.5px;color:var(--muted);margin:14px 0 6px;font-weight:600;}
   <div><div class="n" style="color:var(--expense)" id="sumOut">R$0</div><div class="l">Saídas</div></div>
 </div>
 <script>
-const CATS=['Moradia','Transporte','Saúde','Educação','Lazer','Investimentos','Poupança','Pet','Saúde e Beleza','Outros'];
+const CATS=['Moradia','Supermercado','Transporte','Saúde','Educação','Lazer','Investimentos','Poupança','Pet','Cuidados pessoais','Seguros','Presentes','Gasto pessoal','Terceiros','Outros'];
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 let db={};
 let parcelas=[];
 let fixos=[];
+let objetivos=[];
 let mercadoOrc=0;
 let tab='entradas';
 let now=new Date();
@@ -117,20 +124,26 @@ let fbReady=false;
 function save(){
   if(fbReady){
     fsdb.collection('months').doc(current).set(monthData(current)).catch(()=>{});
-    fsdb.doc('settings/shared').set({parcelas,fixos,mercadoOrc}).catch(()=>{});
+    fsdb.doc('settings/shared').set({parcelas,fixos,mercadoOrc,objetivos}).catch(()=>{});
   }
   render();
 }
+function migrarCategoria(c){ return c==='Saúde e Beleza'?'Cuidados pessoais':c; }
 function startFirebaseSync(){
   fsdb.collection('months').onSnapshot(qs=>{
     const nd={};
-    qs.forEach(doc=>{ nd[doc.id]=doc.data(); });
+    qs.forEach(doc=>{
+      const data=doc.data();
+      (data.despesas||[]).forEach(i=>{ if(i.categoria) i.categoria=migrarCategoria(i.categoria); });
+      nd[doc.id]=data;
+    });
     db=nd;
     render();
   }, ()=>{});
   fsdb.doc('settings/shared').onSnapshot(doc=>{
     const d=doc.data()||{};
-    parcelas=d.parcelas||[]; fixos=d.fixos||[]; mercadoOrc=d.mercadoOrc||0;
+    parcelas=d.parcelas||[]; fixos=d.fixos||[]; mercadoOrc=d.mercadoOrc||0; objetivos=d.objetivos||[];
+    fixos.forEach(f=>{ if(f.categoria) f.categoria=migrarCategoria(f.categoria); });
     render();
   }, ()=>{});
 }
@@ -152,8 +165,37 @@ function monthData(key){
     }:{salMe:{bruto:0,dep:0,calcular:true},salSp:{bruto:0,dep:0,calcular:true},outrasEntradas:[],despesas:[],outrasDespesas:[],mercado:[]};
   }
   if(!db[key].mercado) db[key].mercado=[];
+  if(!db[key].pagamentosFixos) db[key].pagamentosFixos={};
   syncInherited(key);
   return db[key];
+}
+function getPagamentoFixo(monthKey,fixoId){
+  return monthData(monthKey).pagamentosFixos[fixoId]||{pago:false,data:''};
+}
+function setPagamentoFixo(fixoId,pago,data){
+  if(pago&&!data){ const t=new Date(); data=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); }
+  monthData(current).pagamentosFixos[fixoId]={pago,data:pago?data:''};
+  save();
+}
+function renderFixoRow(f){
+  if(editing.list==='fixos'&&editing.id===f.id){
+    return rowHTML('fixos',f,{hasCategoria:true,meta:'',removeCall:`removeFixo('${f.id}')`});
+  }
+  const pag=getPagamentoFixo(current,f.id);
+  const cls=pag.pago?'fixo-pago':'fixo-naopago';
+  const dateField=pag.pago?`<input type="date" value="${pag.data||''}" onchange="setPagamentoFixo('${f.id}',true,this.value)" style="max-width:150px;margin-top:5px">`:'';
+  return `<div class="listitem ${cls}">
+    <span>${f.desc}<br><span class="meta">${f.categoria} · fixo desde ${f.mesInicio}${f.mesValor!==f.mesInicio?' · valor desde '+f.mesValor:''}</span>
+      <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-top:5px">
+        <input type="checkbox" style="width:auto" ${pag.pago?'checked':''} onchange="setPagamentoFixo('${f.id}',this.checked,'${pag.data||''}')"> Pago este mês
+      </label>
+      ${dateField}
+    </span>
+    <span style="display:flex;align-items:center;gap:8px">
+      <b>${fmt(f.valor)}</b>
+      <button class="iconbtn" onclick="startEdit('fixos','${f.id}')">✎</button>
+      <button class="iconbtn" onclick="removeFixo('${f.id}')">✕</button>
+    </span></div>`;
 }
 function syncInherited(key){
   const prevKey=addMonths(key,-1);
@@ -268,7 +310,7 @@ function render(){
   document.getElementById('monthLabel').textContent=MESES[+current.split('-')[1]-1]+' de '+current.split('-')[0];
   const tabsEl=document.getElementById('tabs');
   tabsEl.innerHTML='';
-  [['entradas','Entradas'],['saidas','Saídas'],['mercado','Mercado'],['parcelas','Parcelas'],['resumo','Resumo']].forEach(([k,l])=>{
+  [['entradas','Entradas'],['saidas','Saídas'],['mercado','Mercado'],['parcelas','Parcelas'],['objetivos','Objetivos'],['resumo','Resumo']].forEach(([k,l])=>{
     const b=document.createElement('button');
     b.textContent=l; b.className=k===tab?'active':''; b.onclick=()=>{tab=k;render();};
     tabsEl.appendChild(b);
@@ -277,7 +319,7 @@ function render(){
   const active=document.activeElement;
   const editingField=active&&c.contains(active)&&(active.tagName==='INPUT'||active.tagName==='SELECT');
   if(!editingField){
-    c.innerHTML = tab==='entradas'?renderEntradas():tab==='saidas'?renderSaidas():tab==='mercado'?renderMercado():tab==='parcelas'?renderParcelas():renderResumo();
+    c.innerHTML = tab==='entradas'?renderEntradas():tab==='saidas'?renderSaidas():tab==='mercado'?renderMercado():tab==='parcelas'?renderParcelas():tab==='objetivos'?renderObjetivos():renderResumo();
   }
   const inv=totalEntradas(current), outv=totalSaidas(current), saldo=inv-outv;
   document.getElementById('sumIn').textContent=fmt(inv);
@@ -300,6 +342,8 @@ function saveRow(list,id){
   if(list==='fixos') upsertFixoValor(it,current,valor); else it.valor=valor;
   const catEl=document.getElementById('ed_cat');
   if(catEl) it.categoria=catEl.value;
+  const obsEl=document.getElementById('ed_obs');
+  if(obsEl) it.obs=obsEl.value.trim();
   editing={list:null,id:null};
   save(); render();
 }
@@ -314,10 +358,12 @@ function rowHTML(list,item,opts){
         ${opts.hasCategoria?`<select id="ed_cat">${catOpts}</select>`:'<span></span>'}
         <button class="btn" onclick="saveRow('${list}','${item.id}')">Salvar</button>
       </div>
+      ${opts.hasComment?`<input id="ed_obs" value="${item.obs||''}" placeholder="Comentário (opcional)">`:''}
       <button class="btn secondary" onclick="cancelEdit()">Cancelar</button>
     </div>`;
   }
-  return `<div class="listitem"><span>${item.desc}${opts.meta?`<br><span class="meta">${opts.meta}</span>`:''}</span><span style="display:flex;align-items:center;gap:8px"><b>${fmt(item.valor)}</b><button class="iconbtn" onclick="startEdit('${list}','${item.id}')">✎</button><button class="iconbtn" onclick="${opts.removeCall}">✕</button></span></div>`;
+  const obsLine=opts.hasComment&&item.obs?`<br><span class="meta">💬 ${item.obs}</span>`:'';
+  return `<div class="listitem"><span>${item.desc}${opts.meta?`<br><span class="meta">${opts.meta}</span>`:''}${obsLine}</span><span style="display:flex;align-items:center;gap:8px"><b>${fmt(item.valor)}</b><button class="iconbtn" onclick="startEdit('${list}','${item.id}')">✎</button><button class="iconbtn" onclick="${opts.removeCall}">✕</button></span></div>`;
 }
 function renderEntradas(){
   const d=monthData(current);
@@ -407,7 +453,7 @@ function toggleCopiarProximo(id,checked){
 
 function renderSaidas(){
   const d=monthData(current);
-  const despHtml=d.despesas.map(i=>rowHTML('despesas',i,{hasCategoria:true,meta:i.categoria,removeCall:`removeItem('despesas','${i.id}')`})).join('')||'<div class="empty">Nenhuma despesa.</div>';
+  const despHtml=d.despesas.map(i=>rowHTML('despesas',i,{hasCategoria:true,hasComment:true,meta:i.categoria,removeCall:`removeItem('despesas','${i.id}')`})).join('')||'<div class="empty">Nenhuma despesa.</div>';
   const parc=activeParcelas(current);
   const adiant=adiantamentosDoMes(current);
   const antec=antecipacoesDoMes(current);
@@ -417,7 +463,7 @@ function renderSaidas(){
     ||'<div class="empty">Nenhuma parcela ativa neste mês.</div>';
   const catOpts=CATS.map(c=>`<option>${c}</option>`).join('');
   const fxList=activeFixos(current);
-  const fxHtml=fxList.map(f=>rowHTML('fixos',f,{hasCategoria:true,meta:f.categoria+' · fixo desde '+f.mesInicio+(f.mesValor!==f.mesInicio?' · valor desde '+f.mesValor:''),removeCall:`removeFixo('${f.id}')`})).join('')||'<div class="empty">Nenhum gasto fixo cadastrado.</div>';
+  const fxHtml=fxList.map(renderFixoRow).join('')||'<div class="empty">Nenhum gasto fixo cadastrado.</div>';
   const mGasto=mercadoGasto(current), mRestante=mercadoOrc-mGasto;
   return `
   <div class="card">
@@ -444,6 +490,7 @@ function renderSaidas(){
         <select id="d_cat">${catOpts}</select>
         <button class="btn" onclick="addDespesa()">+</button>
       </div>
+      <input id="d_obs" placeholder="Comentário (opcional)">
     </div>
   </div>
   <div class="card">
@@ -455,8 +502,9 @@ function addDespesa(){
   const desc=document.getElementById('d_desc').value.trim();
   const valor=parseFloat(document.getElementById('d_valor').value);
   const categoria=document.getElementById('d_cat').value;
+  const obs=document.getElementById('d_obs').value.trim();
   if(!desc||!valor) return;
-  monthData(current).despesas.push({id:uid(),desc,valor,categoria});
+  monthData(current).despesas.push({id:uid(),desc,valor,categoria,obs});
   save(); render();
 }
 function addOutraDespesa(){
@@ -624,6 +672,57 @@ function moveToMonth(targetMonth){
   current=targetMonth;
   save(); render();
 }
+function renderObjetivos(){
+  const anoAtual=+current.split('-')[0];
+  const anos=[...new Set(objetivos.map(o=>o.ano))];
+  if(!anos.includes(anoAtual)) anos.push(anoAtual);
+  anos.sort((a,b)=>b-a);
+  const blocos=anos.map(ano=>{
+    const itens=objetivos.filter(o=>o.ano===ano).map(o=>{
+      const dataField=o.alcancado?`<input type="date" value="${o.data||''}" onchange="setObjetivoData('${o.id}',this.value)" style="max-width:150px;margin-top:5px">`:'';
+      return `<div class="listitem ${o.alcancado?'fixo-pago':''}" style="flex-wrap:wrap">
+        <span>${o.desc}
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;margin-top:5px">
+            <input type="checkbox" style="width:auto" ${o.alcancado?'checked':''} onchange="toggleObjetivo('${o.id}',this.checked)"> Alcançado
+          </label>
+          ${dataField}
+        </span>
+        <button class="iconbtn" onclick="removeObjetivo('${o.id}')">✕</button>
+      </div>`;
+    }).join('')||'<div class="empty">Nenhum objetivo cadastrado pra esse ano.</div>';
+    return `<div class="card"><h2>Objetivos de ${ano}</h2>${itens}</div>`;
+  }).join('');
+  return blocos+`
+  <div class="card">
+    <h2>Novo objetivo</h2>
+    <div class="additem">
+      <input id="obj_desc" placeholder="Descrição do objetivo">
+      <div class="grid3">
+        <input id="obj_ano" type="number" value="${anoAtual}" placeholder="Ano">
+        <span></span>
+        <button class="btn" onclick="addObjetivo()">Adicionar</button>
+      </div>
+    </div>
+  </div>`;
+}
+function addObjetivo(){
+  const desc=document.getElementById('obj_desc').value.trim();
+  const ano=parseInt(document.getElementById('obj_ano').value);
+  if(!desc||!ano) return;
+  objetivos.push({id:uid(),desc,ano,alcancado:false,data:''});
+  save(); render();
+}
+function toggleObjetivo(id,checked){
+  const o=objetivos.find(x=>x.id===id);
+  if(checked&&!o.data){ const t=new Date(); o.data=t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); }
+  o.alcancado=checked;
+  save(); render();
+}
+function setObjetivoData(id,data){
+  const o=objetivos.find(x=>x.id===id);
+  o.data=data; save(); render();
+}
+function removeObjetivo(id){ objetivos=objetivos.filter(o=>o.id!==id); save(); render(); }
 function renderResumo(){
   const d=monthData(current);
   const byCat={};
