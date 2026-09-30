@@ -98,6 +98,7 @@ h3.sub{font-size:12.5px;color:var(--muted);margin:14px 0 6px;font-weight:600;}
 </div>
 <script>
 const CATS=['Moradia','Supermercado','Transporte','Saúde','Educação','Lazer','Investimentos','Poupança','Pet','Cuidados pessoais','Seguros','Presentes','Gasto pessoal','Terceiros','Outros'];
+const UNIDADES=['unidade','peça','kg','g','L','ml','pacote','caixa','dúzia'];
 const MESES=['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 let db={};
 let parcelas=[];
@@ -166,6 +167,7 @@ function monthData(key){
   }
   if(!db[key].mercado) db[key].mercado=[];
   if(!db[key].pagamentosFixos) db[key].pagamentosFixos={};
+  if(!db[key].listaCompras) db[key].listaCompras=[];
   syncInherited(key);
   return db[key];
 }
@@ -310,7 +312,7 @@ function render(){
   document.getElementById('monthLabel').textContent=MESES[+current.split('-')[1]-1]+' de '+current.split('-')[0];
   const tabsEl=document.getElementById('tabs');
   tabsEl.innerHTML='';
-  [['entradas','Entradas'],['saidas','Saídas'],['mercado','Mercado'],['parcelas','Parcelas'],['objetivos','Objetivos'],['resumo','Resumo']].forEach(([k,l])=>{
+  [['entradas','Entradas'],['saidas','Saídas'],['mercado','Mercado'],['lista','Lista'],['parcelas','Parcelas'],['objetivos','Objetivos'],['resumo','Resumo']].forEach(([k,l])=>{
     const b=document.createElement('button');
     b.textContent=l; b.className=k===tab?'active':''; b.onclick=()=>{tab=k;render();};
     tabsEl.appendChild(b);
@@ -319,7 +321,7 @@ function render(){
   const active=document.activeElement;
   const editingField=active&&c.contains(active)&&(active.tagName==='INPUT'||active.tagName==='SELECT');
   if(!editingField){
-    c.innerHTML = tab==='entradas'?renderEntradas():tab==='saidas'?renderSaidas():tab==='mercado'?renderMercado():tab==='parcelas'?renderParcelas():tab==='objetivos'?renderObjetivos():renderResumo();
+    c.innerHTML = tab==='entradas'?renderEntradas():tab==='saidas'?renderSaidas():tab==='mercado'?renderMercado():tab==='lista'?renderLista():tab==='parcelas'?renderParcelas():tab==='objetivos'?renderObjetivos():renderResumo();
   }
   const inv=totalEntradas(current), outv=totalSaidas(current), saldo=inv-outv;
   document.getElementById('sumIn').textContent=fmt(inv);
@@ -535,14 +537,20 @@ function removeFixo(id){
   save(); render();
 }
 
+function totalLista(monthKey){
+  return monthData(monthKey).listaCompras.reduce((s,i)=>s+i.qtd*i.precoUnit,0);
+}
 function renderMercado(){
   const d=monthData(current);
   const gasto=mercadoGasto(current), restante=mercadoOrc-gasto;
+  const sugestao=totalLista(current);
   const rows=d.mercado.map(i=>rowHTML('mercado',i,{removeCall:`removeItem('mercado','${i.id}')`})).join('')||'<div class="empty">Nenhuma compra lançada neste mês.</div>';
   return `
   <div class="card">
     <h2>Orçamento de Mercado</h2>
     <div class="field"><label>Orçamento mensal (usado como referência no gasto fixo "Mercado")</label><input type="number" step="0.01" value="${mercadoOrc||''}" onchange="updateMercadoOrc(this.value)"></div>
+    ${sugestao>0?`<div class="row"><span class="label">Valor sugerido para orçamento do mês (Lista de Compras)</span><span class="val" style="color:var(--muted)">${fmt(sugestao)}</span></div>
+    <button class="btn secondary" style="margin:4px 0 8px" onclick="updateMercadoOrc(${sugestao});render();">Usar valor sugerido</button>`:''}
     <div class="row"><span class="label">Gasto no mês</span><span class="val">${fmt(gasto)}</span></div>
     <div class="total"><span>Restante</span><span style="color:${restante>=0?'var(--income)':'var(--expense)'}">${fmt(restante)}</span></div>
   </div>
@@ -723,6 +731,66 @@ function setObjetivoData(id,data){
   o.data=data; save(); render();
 }
 function removeObjetivo(id){ objetivos=objetivos.filter(o=>o.id!==id); save(); render(); }
+let editingListaId=null;
+function renderLista(){
+  const d=monthData(current);
+  const unidOpts=UNIDADES.map(u=>`<option>${u}</option>`).join('');
+  const rows=d.listaCompras.map(i=>{
+    const total=i.qtd*i.precoUnit;
+    if(editingListaId===i.id){
+      return `<div class="listitem" style="flex-direction:column;align-items:stretch;gap:6px">
+        <input id="li_desc" value="${i.desc}" placeholder="Descrição">
+        <div class="grid3">
+          <input id="li_qtd" type="number" step="0.01" value="${i.qtd}" placeholder="Qtd">
+          <select id="li_un">${UNIDADES.map(u=>`<option ${u===i.unidade?'selected':''}>${u}</option>`).join('')}</select>
+          <input id="li_preco" type="number" step="0.01" value="${i.precoUnit}" placeholder="Preço/un.">
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="saveLista('${i.id}')">Salvar</button>
+          <button class="btn secondary" onclick="editingListaId=null;render();">Cancelar</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="listitem"><span>${i.desc}<br><span class="meta">${i.qtd} ${i.unidade} × ${fmt(i.precoUnit)}/${i.unidade}</span></span><span style="display:flex;align-items:center;gap:8px"><b>${fmt(total)}</b><button class="iconbtn" onclick="editingListaId='${i.id}';render();">✎</button><button class="iconbtn" onclick="removeItem('listaCompras','${i.id}')">✕</button></span></div>`;
+  }).join('')||'<div class="empty">Nenhum item na lista.</div>';
+  return `
+  <div class="card">
+    <h2>Lista de compras</h2>
+    ${rows}
+    <div class="total"><span>Total da lista</span><span>${fmt(totalLista(current))}</span></div>
+    <h3 class="sub">Novo item</h3>
+    <div class="additem">
+      <input id="li_add_desc" placeholder="Descrição (ex: Arroz)">
+      <div class="grid3">
+        <input id="li_add_qtd" type="number" step="0.01" placeholder="Qtd">
+        <select id="li_add_un">${unidOpts}</select>
+        <input id="li_add_preco" type="number" step="0.01" placeholder="Preço/un.">
+      </div>
+      <button class="btn" onclick="addLista()">Adicionar</button>
+    </div>
+    <p class="meta" style="margin-top:10px">Esses valores são só de planejamento — não entram como despesa nem afetam o saldo do mês.</p>
+  </div>`;
+}
+function addLista(){
+  const desc=document.getElementById('li_add_desc').value.trim();
+  const qtd=parseFloat(document.getElementById('li_add_qtd').value);
+  const unidade=document.getElementById('li_add_un').value;
+  const precoUnit=parseFloat(document.getElementById('li_add_preco').value);
+  if(!desc||!qtd||!precoUnit) return;
+  monthData(current).listaCompras.push({id:uid(),desc,qtd,unidade,precoUnit});
+  save(); render();
+}
+function saveLista(id){
+  const it=monthData(current).listaCompras.find(x=>x.id===id);
+  const desc=document.getElementById('li_desc').value.trim();
+  const qtd=parseFloat(document.getElementById('li_qtd').value);
+  const unidade=document.getElementById('li_un').value;
+  const precoUnit=parseFloat(document.getElementById('li_preco').value);
+  if(!desc||!qtd||!precoUnit) return;
+  Object.assign(it,{desc,qtd,unidade,precoUnit});
+  editingListaId=null;
+  save(); render();
+}
 function renderResumo(){
   const d=monthData(current);
   const byCat={};
