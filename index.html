@@ -78,6 +78,7 @@ input,select{font:inherit;background:var(--bg);border:1px solid var(--border);bo
 .fixo-pago{background:var(--income-bg);border-radius:8px;padding:8px;margin-bottom:2px;}
 .fixo-naopago{background:var(--unpaid-bg);border-radius:8px;padding:8px;margin-bottom:2px;}
 .fixo-pago,.fixo-naopago{border-bottom:none!important;}
+body.privacy-mode .money{filter:blur(6px);user-select:none;}
 h3.sub{font-size:12.5px;color:var(--muted);margin:14px 0 6px;font-weight:600;}
 </style>
 </head>
@@ -87,6 +88,7 @@ h3.sub{font-size:12.5px;color:var(--muted);margin:14px 0 6px;font-weight:600;}
     <button onclick="shiftMonth(-1)">‹</button>
     <h1 id="monthLabel"></h1>
     <button onclick="shiftMonth(1)">›</button>
+    <button id="privacyBtn" onclick="togglePrivacy()" style="font-size:18px" title="Ocultar valores">👁️</button>
   </div>
   <div class="tabs" id="tabs"></div>
 </header>
@@ -204,11 +206,23 @@ function syncInherited(key){
   const prev=db[prevKey];
   if(!prev) return;
   const already=new Set(db[key].outrasEntradas.filter(i=>i.fromId).map(i=>i.fromId));
-  (prev.outrasEntradas||[]).filter(i=>i.copiarProximo&&!already.has(i.id)).forEach(i=>{
-    db[key].outrasEntradas.push({id:uid(),desc:i.desc,valor:i.valor,fromId:i.id});
+  (prev.outrasEntradas||[]).forEach(i=>{
+    if(already.has(i.id)) return;
+    if(i.recorrente){
+      if(i.mesesRestantes>0) db[key].outrasEntradas.push({id:uid(),desc:i.desc,valor:i.valor,fromId:i.id,recorrente:true,mesesRestantes:i.mesesRestantes-1});
+    }else if(i.copiarProximo){
+      db[key].outrasEntradas.push({id:uid(),desc:i.desc,valor:i.valor,fromId:i.id});
+    }
   });
 }
-function fmt(n){return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fmt(n){return '<span class="money">R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})+'</span>';}
+let privacyMode=localStorage.getItem('fin_privacy')==='1';
+function togglePrivacy(){
+  privacyMode=!privacyMode;
+  localStorage.setItem('fin_privacy',privacyMode?'1':'0');
+  document.body.classList.toggle('privacy-mode',privacyMode);
+  document.getElementById('privacyBtn').textContent=privacyMode?'🙈':'👁️';
+}
 function shiftMonth(d){
   const [y,m]=current.split('-').map(Number);
   const dt=new Date(y,m-1+d,1);
@@ -324,10 +338,10 @@ function render(){
     c.innerHTML = tab==='entradas'?renderEntradas():tab==='saidas'?renderSaidas():tab==='mercado'?renderMercado():tab==='lista'?renderLista():tab==='parcelas'?renderParcelas():tab==='objetivos'?renderObjetivos():renderResumo();
   }
   const inv=totalEntradas(current), outv=totalSaidas(current), saldo=inv-outv;
-  document.getElementById('sumIn').textContent=fmt(inv);
-  document.getElementById('sumOut').textContent=fmt(outv);
+  document.getElementById('sumIn').innerHTML=fmt(inv);
+  document.getElementById('sumOut').innerHTML=fmt(outv);
   const se=document.getElementById('sumSaldo');
-  se.textContent=fmt(saldo); se.className='n saldo '+(saldo>=0?'pos':'neg');
+  se.innerHTML=fmt(saldo); se.className='n saldo '+(saldo>=0?'pos':'neg');
 }
 
 let editing={list:null,id:null};
@@ -370,9 +384,14 @@ function rowHTML(list,item,opts){
 function renderEntradas(){
   const d=monthData(current);
   const me=salaryCalc(d.salMe), sp=salaryCalc(d.salSp);
-  const outrasHtml=d.outrasEntradas.map(i=>`<div class="listitem"><span>${i.desc}${i.fromId?'<br><span class="meta">↩ copiado do mês anterior</span>':''}</span><span style="display:flex;align-items:center;gap:8px">
-    <label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)"><input type="checkbox" style="width:auto" ${i.copiarProximo?'checked':''} onchange="toggleCopiarProximo('${i.id}',this.checked)">copiar p/ próx. mês</label>
-    <b>${fmt(i.valor)}</b><button class="iconbtn" onclick="removeItem('outrasEntradas','${i.id}')">✕</button></span></div>`).join('')||'<div class="empty">Nenhum lançamento.</div>';
+  const outrasHtml=d.outrasEntradas.map(i=>{
+    const recInfo=i.recorrente?`<br><span class="meta">🔁 recorrente${i.mesesRestantes>0?' · mais '+i.mesesRestantes+' mês(es)':' · última repetição'}</span>`:'';
+    const copiaInfo=i.fromId&&!i.recorrente?'<br><span class="meta">↩ copiado do mês anterior</span>':'';
+    const copiaCheck=!i.recorrente?`<label style="display:flex;align-items:center;gap:3px;font-size:11px;color:var(--muted)"><input type="checkbox" style="width:auto" ${i.copiarProximo?'checked':''} onchange="toggleCopiarProximo('${i.id}',this.checked)">copiar p/ próx. mês</label>`:'';
+    return `<div class="listitem"><span>${i.desc}${recInfo}${copiaInfo}</span><span style="display:flex;align-items:center;gap:8px">
+    ${copiaCheck}
+    <b>${fmt(i.valor)}</b><button class="iconbtn" onclick="removeItem('outrasEntradas','${i.id}')">✕</button></span></div>`;
+  }).join('')||'<div class="empty">Nenhum lançamento.</div>';
   const outrasDespHtml=d.outrasDespesas.map(i=>rowHTML('outrasDespesas',i,{removeCall:`removeItem('outrasDespesas','${i.id}')`})).join('')||'<div class="empty">Nenhum lançamento.</div>';
   return `
   <div class="card">
@@ -399,6 +418,13 @@ function renderEntradas(){
         <input type="checkbox" id="oe_repete" style="width:auto">
         Copiar este lançamento pro mês seguinte
       </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin:6px 0 0;">
+        <input type="checkbox" id="oe_recorrente" style="width:auto" onchange="document.getElementById('oe_meses_wrap').style.display=this.checked?'block':'none'">
+        Entrada recorrente (repete automaticamente por vários meses)
+      </label>
+      <div id="oe_meses_wrap" style="display:none;margin-top:4px">
+        <div class="field"><label>Repetir por quantos meses além deste?</label><input id="oe_meses" type="number" min="1" placeholder="Ex: 3"></div>
+      </div>
     </div>
   </div>
   <div class="card">
@@ -444,8 +470,13 @@ function addOutraEntrada(){
   const desc=document.getElementById('oe_desc').value.trim();
   const valor=parseFloat(document.getElementById('oe_valor').value);
   const copiarProximo=document.getElementById('oe_repete').checked;
+  const recorrente=document.getElementById('oe_recorrente').checked;
+  const meses=parseInt(document.getElementById('oe_meses').value);
   if(!desc||!valor) return;
-  monthData(current).outrasEntradas.push({id:uid(),desc,valor,copiarProximo});
+  const item={id:uid(),desc,valor};
+  if(recorrente&&meses>0){ item.recorrente=true; item.mesesRestantes=meses; }
+  else{ item.copiarProximo=copiarProximo; }
+  monthData(current).outrasEntradas.push(item);
   save(); render();
 }
 function toggleCopiarProximo(id,checked){
@@ -587,9 +618,13 @@ function renderParcelas(){
     const mesFim=addMonths(p.mesInicio,p.total-1);
     const adiantInfo=p.adiantamento>0?` · Entrada ${fmt(p.adiantamento)} em ${p.mesAdiantamento}`:'';
     const restante=p.total-idx-1;
-    const antecForm=(ativo&&restante>0)?`<div style="display:flex;gap:6px;align-items:center;margin-top:6px">
-      <input id="ant_${p.id}" type="number" min="1" max="${restante}" placeholder="Qtd. parcelas" style="max-width:110px">
-      <button class="btn secondary" onclick="antecipar('${p.id}')">Adiantar parcelas</button>
+    const antecForm=(ativo&&restante>0)?`<div style="margin-top:6px">
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <input id="ant_${p.id}" type="number" min="1" max="${restante}" placeholder="Qtd. parcelas" style="max-width:110px">
+        <input id="antv_${p.id}" type="number" step="0.01" placeholder="Valor pago (opcional)" style="max-width:150px">
+        <button class="btn secondary" onclick="antecipar('${p.id}')">Adiantar parcelas</button>
+      </div>
+      <span class="meta">Deixe o valor em branco pra usar ${p.total>0?fmt(p.valorParcela):''} por parcela, ou informe o valor real pago (útil quando há desconto de juros).</span>
     </div>`:'';
     const antecHist=(p.antecipacoes||[]).map((a,i)=>`<div class="meta" style="display:flex;justify-content:space-between;align-items:center;margin-top:3px">
       <span>↩ Antecipou ${a.qtd}x (${fmt(a.valor)}) em ${a.mes}</span>
@@ -639,8 +674,10 @@ function antecipar(id){
   let qtd=parseInt(document.getElementById('ant_'+id).value);
   if(!qtd||qtd<1) return;
   qtd=Math.min(qtd,restante);
+  const valorManual=parseFloat(document.getElementById('antv_'+id).value);
+  const valor=(valorManual>0)?valorManual:qtd*p.valorParcela;
   p.antecipacoes=p.antecipacoes||[];
-  p.antecipacoes.push({mes:current,qtd,valor:qtd*p.valorParcela});
+  p.antecipacoes.push({mes:current,qtd,valor});
   p.total-=qtd;
   save(); render();
 }
@@ -735,7 +772,8 @@ let editingListaId=null;
 function renderLista(){
   const d=monthData(current);
   const unidOpts=UNIDADES.map(u=>`<option>${u}</option>`).join('');
-  const rows=d.listaCompras.map(i=>{
+  const itensOrdenados=[...d.listaCompras].sort((a,b)=>a.desc.localeCompare(b.desc,'pt-BR'));
+  const rows=itensOrdenados.map(i=>{
     const total=i.qtd*i.precoUnit;
     if(editingListaId===i.id){
       return `<div class="listitem" style="flex-direction:column;align-items:stretch;gap:6px">
@@ -841,6 +879,7 @@ function renderResumo(){
     <button class="btn secondary" onclick="moveToMonth(document.getElementById('mv_month').value)">Mover dados</button>
   </div>`;
 }
+if(privacyMode){ document.body.classList.add('privacy-mode'); document.getElementById('privacyBtn').textContent='🙈'; }
 render();
 if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
