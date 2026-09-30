@@ -751,7 +751,12 @@ function renderLista(){
         </div>
       </div>`;
     }
-    return `<div class="listitem"><span>${i.desc}<br><span class="meta">${i.qtd} ${i.unidade} × ${fmt(i.precoUnit)}/${i.unidade}</span></span><span style="display:flex;align-items:center;gap:8px"><b>${fmt(total)}</b><button class="iconbtn" onclick="editingListaId='${i.id}';render();">✎</button><button class="iconbtn" onclick="removeItem('listaCompras','${i.id}')">✕</button></span></div>`;
+    return `<div class="listitem ${i.pego?'fixo-pago':'fixo-naopago'}"><span>
+        <label style="display:flex;align-items:center;gap:6px">
+          <input type="checkbox" style="width:auto" ${i.pego?'checked':''} onchange="togglePego('${i.id}',this.checked)">
+          ${i.desc}
+        </label>
+        <span class="meta">${i.qtd} ${i.unidade} × ${fmt(i.precoUnit)}/${i.unidade}</span></span><span style="display:flex;align-items:center;gap:8px"><b>${fmt(total)}</b><button class="iconbtn" onclick="editingListaId='${i.id}';render();">✎</button><button class="iconbtn" onclick="removeItem('listaCompras','${i.id}')">✕</button></span></div>`;
   }).join('')||'<div class="empty">Nenhum item na lista.</div>';
   return `
   <div class="card">
@@ -768,8 +773,20 @@ function renderLista(){
       </div>
       <button class="btn" onclick="addLista()">Adicionar</button>
     </div>
+    <button class="btn secondary" style="margin-top:10px" onclick="copyListaProximoMes()">Copiar lista para o mês seguinte</button>
     <p class="meta" style="margin-top:10px">Esses valores são só de planejamento — não entram como despesa nem afetam o saldo do mês.</p>
   </div>`;
+}
+function togglePego(id,checked){
+  const it=monthData(current).listaCompras.find(x=>x.id===id);
+  it.pego=checked; save(); render();
+}
+function copyListaProximoMes(){
+  const nextKey=addMonths(current,1);
+  const items=monthData(current).listaCompras;
+  const dest=monthData(nextKey).listaCompras;
+  items.forEach(i=>{ dest.push({id:uid(),desc:i.desc,qtd:i.qtd,unidade:i.unidade,precoUnit:i.precoUnit,pego:false}); });
+  save(); render();
 }
 function addLista(){
   const desc=document.getElementById('li_add_desc').value.trim();
@@ -777,7 +794,7 @@ function addLista(){
   const unidade=document.getElementById('li_add_un').value;
   const precoUnit=parseFloat(document.getElementById('li_add_preco').value);
   if(!desc||!qtd||!precoUnit) return;
-  monthData(current).listaCompras.push({id:uid(),desc,qtd,unidade,precoUnit});
+  monthData(current).listaCompras.push({id:uid(),desc,qtd,unidade,precoUnit,pego:false});
   save(); render();
 }
 function saveLista(id){
